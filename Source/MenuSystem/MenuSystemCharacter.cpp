@@ -14,6 +14,48 @@
 #include "OnlineSessionSettings.h"
 #include "Online/OnlineSessionNames.h"
 
+namespace DebugLogPrinter
+{
+	static void Info(const FString& Message)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(
+				-1,
+				15.f,
+				FColor::Green,
+				Message
+			);
+		}
+	}
+
+	static void Warning(const FString& Message)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(
+				-1,
+				15.f,
+				FColor::Yellow,
+				Message
+			);
+		}
+	}
+
+	static void Error(const FString& Message)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(
+				-1,
+				15.f,
+				FColor::Red,
+				Message
+			);
+		}
+	}
+}
+
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
 //////////////////////////////////////////////////////////////////////////
@@ -21,7 +63,8 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
 AMenuSystemCharacter::AMenuSystemCharacter() :
 	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete)),
-	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete))
+	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete)),
+	JoinSessionCompleteDelegate(FOnJoinSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnJoinSessionComplete))
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
@@ -62,16 +105,7 @@ AMenuSystemCharacter::AMenuSystemCharacter() :
 	if (OnlineSubsystem)
 	{
 		OnlineSessionInterface = OnlineSubsystem->GetSessionInterface();
-
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(
-				-1,
-				15.f,
-				FColor::Green,
-				FString::Printf(TEXT("Found subsystem %s"), *OnlineSubsystem->GetSubsystemName().ToString())
-			);
-		}
+		DebugLogPrinter::Info(FString::Printf(TEXT("Found subsystem %s"), *OnlineSubsystem->GetSubsystemName().ToString()));
 	}
 }
 
@@ -103,6 +137,7 @@ void AMenuSystemCharacter::CreateGameSession()
 	SessionSettings->bShouldAdvertise = true;
 	SessionSettings->bUsesPresence = true;
 	SessionSettings->bUseLobbiesIfAvailable = true;
+	SessionSettings->Set(FName("MatchType"), FString("FreeForAll"), EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
 	OnlineSessionInterface->CreateSession(
 		*LocalPlayer->GetPreferredUniqueNetId(),
@@ -124,6 +159,7 @@ void AMenuSystemCharacter::JoinGameSession()
 	SessionSearch->MaxSearchResults = 100000;
 	SessionSearch->bIsLanQuery = false;
 	SessionSearch->QuerySettings.Set(SEARCH_PRESENCE, true, EOnlineComparisonOp::Equals);
+	SessionSearch->QuerySettings.Set(FName("MatchType"), FString("FreeForAll"), EOnlineComparisonOp::Equals);
 
 	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
 	OnlineSessionInterface->FindSessions(*LocalPlayer->GetPreferredUniqueNetId(), SessionSearch.ToSharedRef());
@@ -135,14 +171,17 @@ void AMenuSystemCharacter::OnCreateSessionComplete(FName SessionName, bool bWasS
 	{
 		OnlineSessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegateHandle);
 	}
-	if (GEngine)
+	if (!bWasSuccessful)
 	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			15.f,
-			FColor::Green,
-			FString::Printf(TEXT("Has \"%s\" session been created? %s"), *SessionName.ToString(), bWasSuccessful ? TEXT("YES") : TEXT("NO"))
-		);
+		DebugLogPrinter::Error(TEXT("Failed to create session!"));
+		return;
+	}
+	DebugLogPrinter::Info(TEXT("Session has been created!"));
+
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->ServerTravel(FString("/Game/Maps/Lobby?listen"));
 	}
 }
 
@@ -154,45 +193,54 @@ void AMenuSystemCharacter::OnFindSessionsComplete(bool bWasSuccessful)
 	}
 	if (!bWasSuccessful || !SessionSearch.IsValid())
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(
-				-1,
-				15.f,
-				FColor::Red,
-				FString::Printf(TEXT("Failed to find sessions"))
-			);
-		}
+		DebugLogPrinter::Error(TEXT("Failed to find sessions!"));
 		return;
 	}
 
 	if (SessionSearch->SearchResults.IsEmpty())
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(
-				-1,
-				15.f,
-				FColor::Yellow,
-				FString::Printf(TEXT("Sessions was not found"))
-			);
-		}
+		DebugLogPrinter::Warning(TEXT("Sessions was not found :("));
 		return;
 	}
 
-	for (auto Result : SessionSearch->SearchResults)
-	{
-		FString Id = Result.GetSessionIdStr();
-		FString User = Result.Session.OwningUserName;
+	FOnlineSessionSearchResult Result = SessionSearch->SearchResults[0];
+	FString Id = Result.GetSessionIdStr();
+	FString User = Result.Session.OwningUserName;
+	DebugLogPrinter::Info(FString::Printf(TEXT("Session \"%s\" by \"%s\" has been found!"), *Id, *User));
+	DebugLogPrinter::Info(FString::Printf(TEXT("Joining session: %s"), *Id));
 
-		if (GEngine)
+	if (OnlineSessionInterface.IsValid())
+	{
+		JoinSessionCompleteDelegateHandle = OnlineSessionInterface->AddOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegate);
+
+		const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
+		OnlineSessionInterface->JoinSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, Result);
+	}
+}
+
+void AMenuSystemCharacter::OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result)
+{
+	if (!OnlineSessionInterface.IsValid())
+	{
+		return;
+	}
+
+	OnlineSessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegateHandle);
+
+	if (Result != EOnJoinSessionCompleteResult::Success)
+	{
+		DebugLogPrinter::Error(FString::Printf(TEXT("Joining failed with result: %s"), LexToString(Result)));
+		return;
+	}
+
+	FString Address;
+	if (OnlineSessionInterface->GetResolvedConnectString(SessionName, Address))
+	{
+		DebugLogPrinter::Info(FString::Printf(TEXT("Connect string: %s"), *Address));
+		APlayerController* PlayerController = GetGameInstance()->GetFirstLocalPlayerController();
+		if (PlayerController)
 		{
-			GEngine->AddOnScreenDebugMessage(
-				-1,
-				15.f,
-				FColor::Green,
-				FString::Printf(TEXT("Session \"%s\" by \"%s\" has been found!"), *Id, *User)
-			);
+			PlayerController->ClientTravel(Address, ETravelType::TRAVEL_Absolute);
 		}
 	}
 }
