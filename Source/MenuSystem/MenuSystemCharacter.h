@@ -92,6 +92,9 @@ private:
 	FOnCreateSessionCompleteDelegate CreateSessionCompleteDelegate;
 	FOnFindSessionsCompleteDelegate FindSessionsCompleteDelegate;
 
+	FDelegateHandle CreateSessionCompleteDelegateHandle;
+	FDelegateHandle FindSessionsCompleteDelegateHandle;
+
 	TSharedPtr<FOnlineSessionSearch> SessionSearch = nullptr;
 };
 

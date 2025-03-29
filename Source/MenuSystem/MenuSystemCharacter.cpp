@@ -93,7 +93,7 @@ void AMenuSystemCharacter::CreateGameSession()
 		OnlineSessionInterface->DestroySession(NAME_GameSession);
 	}
 
-	OnlineSessionInterface->AddOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegate);
+	CreateSessionCompleteDelegateHandle = OnlineSessionInterface->AddOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegate);
 
 	TSharedPtr<FOnlineSessionSettings> SessionSettings = MakeShareable(new FOnlineSessionSettings());
 	SessionSettings->bIsLANMatch = false;
@@ -102,7 +102,7 @@ void AMenuSystemCharacter::CreateGameSession()
 	SessionSettings->bAllowJoinViaPresence = true;
 	SessionSettings->bShouldAdvertise = true;
 	SessionSettings->bUsesPresence = true;
-	//SessionSettings->bUseLobbiesIfAvailable = true;
+	SessionSettings->bUseLobbiesIfAvailable = true;
 	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
 	OnlineSessionInterface->CreateSession(
 		*LocalPlayer->GetPreferredUniqueNetId(),
@@ -118,7 +118,7 @@ void AMenuSystemCharacter::JoinGameSession()
 		return;
 	}
 
-	OnlineSessionInterface->AddOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegate);
+	FindSessionsCompleteDelegateHandle = OnlineSessionInterface->AddOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegate);
 
 	SessionSearch = MakeShareable(new FOnlineSessionSearch());
 	SessionSearch->MaxSearchResults = 100000;
@@ -131,6 +131,10 @@ void AMenuSystemCharacter::JoinGameSession()
 
 void AMenuSystemCharacter::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
 {
+	if (OnlineSessionInterface.IsValid())
+	{
+		OnlineSessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegateHandle);
+	}
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(
@@ -144,6 +148,10 @@ void AMenuSystemCharacter::OnCreateSessionComplete(FName SessionName, bool bWasS
 
 void AMenuSystemCharacter::OnFindSessionsComplete(bool bWasSuccessful)
 {
+	if (OnlineSessionInterface.IsValid())
+	{
+		OnlineSessionInterface->ClearOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegateHandle);
+	}
 	if (!bWasSuccessful || !SessionSearch.IsValid())
 	{
 		if (GEngine)
@@ -152,6 +160,20 @@ void AMenuSystemCharacter::OnFindSessionsComplete(bool bWasSuccessful)
 				-1,
 				15.f,
 				FColor::Red,
+				FString::Printf(TEXT("Failed to find sessions"))
+			);
+		}
+		return;
+	}
+
+	if (SessionSearch->SearchResults.IsEmpty())
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(
+				-1,
+				15.f,
+				FColor::Yellow,
 				FString::Printf(TEXT("Sessions was not found"))
 			);
 		}
