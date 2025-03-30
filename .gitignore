@@ -4,7 +4,7 @@
 .vs/
 Binaries/
 Build/
-Content/
+Content/*
 DerivedDataCache/
 Intermediate/
 Releases/
