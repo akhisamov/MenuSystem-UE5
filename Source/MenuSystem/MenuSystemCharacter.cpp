@@ -10,61 +10,13 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
-#include "OnlineSubsystem.h"
-#include "OnlineSessionSettings.h"
-#include "Online/OnlineSessionNames.h"
-
-namespace DebugLogPrinter
-{
-	static void Info(const FString& Message)
-	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(
-				-1,
-				15.f,
-				FColor::Green,
-				Message
-			);
-		}
-	}
-
-	static void Warning(const FString& Message)
-	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(
-				-1,
-				15.f,
-				FColor::Yellow,
-				Message
-			);
-		}
-	}
-
-	static void Error(const FString& Message)
-	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(
-				-1,
-				15.f,
-				FColor::Red,
-				Message
-			);
-		}
-	}
-}
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
 //////////////////////////////////////////////////////////////////////////
 // AMenuSystemCharacter
 
-AMenuSystemCharacter::AMenuSystemCharacter() :
-	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete)),
-	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete)),
-	JoinSessionCompleteDelegate(FOnJoinSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnJoinSessionComplete))
+AMenuSystemCharacter::AMenuSystemCharacter()
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
@@ -100,149 +52,12 @@ AMenuSystemCharacter::AMenuSystemCharacter() :
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
-
-	IOnlineSubsystem* OnlineSubsystem = IOnlineSubsystem::Get();
-	if (OnlineSubsystem)
-	{
-		OnlineSessionInterface = OnlineSubsystem->GetSessionInterface();
-		DebugLogPrinter::Info(FString::Printf(TEXT("Found subsystem %s"), *OnlineSubsystem->GetSubsystemName().ToString()));
-	}
 }
 
 void AMenuSystemCharacter::BeginPlay()
 {
 	// Call the base class  
 	Super::BeginPlay();
-}
-
-void AMenuSystemCharacter::CreateGameSession()
-{
-	if (!OnlineSessionInterface.IsValid())
-	{
-		return;
-	}
-
-	if (OnlineSessionInterface->GetNamedSession(NAME_GameSession) != nullptr)
-	{
-		OnlineSessionInterface->DestroySession(NAME_GameSession);
-	}
-
-	CreateSessionCompleteDelegateHandle = OnlineSessionInterface->AddOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegate);
-
-	TSharedPtr<FOnlineSessionSettings> SessionSettings = MakeShareable(new FOnlineSessionSettings());
-	SessionSettings->bIsLANMatch = false;
-	SessionSettings->NumPublicConnections = 4;
-	SessionSettings->bAllowJoinInProgress = true;
-	SessionSettings->bAllowJoinViaPresence = true;
-	SessionSettings->bShouldAdvertise = true;
-	SessionSettings->bUsesPresence = true;
-	SessionSettings->bUseLobbiesIfAvailable = true;
-	SessionSettings->Set(FName("MatchType"), FString("FreeForAll"), EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
-	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
-	OnlineSessionInterface->CreateSession(
-		*LocalPlayer->GetPreferredUniqueNetId(),
-		NAME_GameSession,
-		*SessionSettings);
-}
-
-void AMenuSystemCharacter::JoinGameSession()
-{
-	// Find session
-	if (!OnlineSessionInterface.IsValid())
-	{
-		return;
-	}
-
-	FindSessionsCompleteDelegateHandle = OnlineSessionInterface->AddOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegate);
-
-	SessionSearch = MakeShareable(new FOnlineSessionSearch());
-	SessionSearch->MaxSearchResults = 100000;
-	SessionSearch->bIsLanQuery = false;
-	SessionSearch->QuerySettings.Set(SEARCH_PRESENCE, true, EOnlineComparisonOp::Equals);
-	SessionSearch->QuerySettings.Set(FName("MatchType"), FString("FreeForAll"), EOnlineComparisonOp::Equals);
-
-	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
-	OnlineSessionInterface->FindSessions(*LocalPlayer->GetPreferredUniqueNetId(), SessionSearch.ToSharedRef());
-}
-
-void AMenuSystemCharacter::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
-{
-	if (OnlineSessionInterface.IsValid())
-	{
-		OnlineSessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegateHandle);
-	}
-	if (!bWasSuccessful)
-	{
-		DebugLogPrinter::Error(TEXT("Failed to create session!"));
-		return;
-	}
-	DebugLogPrinter::Info(TEXT("Session has been created!"));
-
-	UWorld* World = GetWorld();
-	if (World)
-	{
-		World->ServerTravel(FString("/Game/Maps/Lobby?listen"));
-	}
-}
-
-void AMenuSystemCharacter::OnFindSessionsComplete(bool bWasSuccessful)
-{
-	if (OnlineSessionInterface.IsValid())
-	{
-		OnlineSessionInterface->ClearOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegateHandle);
-	}
-	if (!bWasSuccessful || !SessionSearch.IsValid())
-	{
-		DebugLogPrinter::Error(TEXT("Failed to find sessions!"));
-		return;
-	}
-
-	if (SessionSearch->SearchResults.IsEmpty())
-	{
-		DebugLogPrinter::Warning(TEXT("Sessions was not found :("));
-		return;
-	}
-
-	FOnlineSessionSearchResult Result = SessionSearch->SearchResults[0];
-	FString Id = Result.GetSessionIdStr();
-	FString User = Result.Session.OwningUserName;
-	DebugLogPrinter::Info(FString::Printf(TEXT("Session \"%s\" by \"%s\" has been found!"), *Id, *User));
-	DebugLogPrinter::Info(FString::Printf(TEXT("Joining session: %s"), *Id));
-
-	if (OnlineSessionInterface.IsValid())
-	{
-		JoinSessionCompleteDelegateHandle = OnlineSessionInterface->AddOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegate);
-
-		const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
-		OnlineSessionInterface->JoinSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, Result);
-	}
-}
-
-void AMenuSystemCharacter::OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result)
-{
-	if (!OnlineSessionInterface.IsValid())
-	{
-		return;
-	}
-
-	OnlineSessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegateHandle);
-
-	if (Result != EOnJoinSessionCompleteResult::Success)
-	{
-		DebugLogPrinter::Error(FString::Printf(TEXT("Joining failed with result: %s"), LexToString(Result)));
-		return;
-	}
-
-	FString Address;
-	if (OnlineSessionInterface->GetResolvedConnectString(SessionName, Address))
-	{
-		DebugLogPrinter::Info(FString::Printf(TEXT("Connect string: %s"), *Address));
-		APlayerController* PlayerController = GetGameInstance()->GetFirstLocalPlayerController();
-		if (PlayerController)
-		{
-			PlayerController->ClientTravel(Address, ETravelType::TRAVEL_Absolute);
-		}
-	}
 }
 
 //////////////////////////////////////////////////////////////////////////
