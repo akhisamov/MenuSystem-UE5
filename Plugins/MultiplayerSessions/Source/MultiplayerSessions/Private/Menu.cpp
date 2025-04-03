@@ -46,6 +46,19 @@ namespace DebugLogPrinter
 			);
 		}
 	}
+
+	static void Debug(const FString& Message)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(
+				-1,
+				15.f,
+				FColor::Blue,
+				Message
+			);
+		}
+	}
 }
 
 void UMenu::MenuSetup(int32 NumberOfPublicConnections, const FString& TypeOfMatch)
@@ -152,9 +165,10 @@ void UMenu::OnFindSessions(const TArray<FOnlineSessionSearchResult>& SearchResul
 		}
 
 		FString ResultMatchType;
-		Result.Session.SessionSettings.Get(TEXT("MatchType"), ResultMatchType);
+		Result.Session.SessionSettings.Get("MatchType", ResultMatchType);
 		if (ResultMatchType == MatchType)
 		{
+			DebugLogPrinter::Info(TEXT("Joining..."));
 			MultiplayerSessionsSubsystem->JoinSession(Result);
 			return;
 		}
@@ -199,6 +213,7 @@ void UMenu::JoinButtonClicked()
 {
 	if (MultiplayerSessionsSubsystem)
 	{
+		DebugLogPrinter::Info(TEXT("Searching..."));
 		MultiplayerSessionsSubsystem->FindSessions(100000);
 	}
 }

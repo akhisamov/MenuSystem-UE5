@@ -62,6 +62,11 @@ void UMultiplayerSessionsSubsystem::CreateSession(int32 NumPublicConnections, co
 
 void UMultiplayerSessionsSubsystem::FindSessions(int32 MaxSearchResults)
 {
+	if (LastSessionSearch && LastSessionSearch->SearchState == EOnlineAsyncTaskState::InProgress)
+	{
+		return;
+	}
+
 	if (SessionInterface.IsValid())
 	{
 		FindSessionsCompleteDelegateHandle = SessionInterface->AddOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegate);
@@ -85,6 +90,8 @@ void UMultiplayerSessionsSubsystem::JoinSession(const FOnlineSessionSearchResult
 {
 	if (SessionInterface.IsValid())
 	{
+		JoinSessionCompleteDelegateHandle = SessionInterface->AddOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegate);
+
 		const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
 		if (SessionInterface->JoinSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, SearchResult))
 		{
