@@ -195,10 +195,26 @@ void UMenu::OnJoinSession(EOnJoinSessionCompleteResult::Type Result, const FStri
 
 void UMenu::OnDestroySession(bool bWasSuccessful)
 {
+	if (bWasSuccessful)
+	{
+		DebugLogPrinter::Info("Session destroyed");
+	}
+	else
+	{
+		DebugLogPrinter::Error("Failed to destroy session!");
+	}
 }
 
 void UMenu::OnStartSession(bool bWasSuccessful)
 {
+	if (bWasSuccessful)
+	{
+		DebugLogPrinter::Info("Session started");
+	}
+	else
+	{
+		DebugLogPrinter::Error("Failed to start session!");
+	}
 }
 
 void UMenu::HostButtonClicked()
