@@ -61,10 +61,14 @@ namespace DebugLogPrinter
 	}
 }
 
-void UMenu::MenuSetup(int32 NumberOfPublicConnections, const FString& TypeOfMatch)
+void UMenu::MenuSetup(
+	int32 NumberOfPublicConnections,
+	const FString& TypeOfMatch,
+	const FString& PathToLobby)
 {
 	NumPublicConnections = NumberOfPublicConnections;
 	MatchType = TypeOfMatch;
+	LobbyPath = PathToLobby + TEXT("?listen");
 
 	AddToViewport();
 	SetVisibility(ESlateVisibility::Visible);
@@ -134,7 +138,7 @@ void UMenu::OnCreateSession(bool bWasSuccessful)
 		UWorld* World = GetWorld();
 		if (World)
 		{
-			World->ServerTravel("/Game/Maps/Lobby?listen");
+			World->ServerTravel(LobbyPath);
 		}
 	}
 	else
